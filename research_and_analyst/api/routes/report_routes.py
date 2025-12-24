@@ -71,11 +71,11 @@ async def login(request: Request, username: str = Form(...), password: str = For
     user = db.query(User).filter(User.username == username).first()
 
     if user and verify_password(password, user.password):
-        # Always use signed cookies on hf-deploy branch
+        # Render dashboard directly - no redirect to avoid cookie loss on HF Spaces
         signed_username = sign_cookie_value(username)
-        print(f"[LOGIN] User {username} authenticated, setting cookie")
+        print(f"[LOGIN] User {username} authenticated, rendering dashboard directly")
         
-        response = RedirectResponse(url="/dashboard", status_code=302)
+        response = request.app.templates.TemplateResponse("dashboard.html", {"request": request, "user": username})
         response.set_cookie(
             key="user_session", 
             value=signed_username,
