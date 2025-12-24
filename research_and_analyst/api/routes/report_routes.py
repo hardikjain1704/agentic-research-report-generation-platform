@@ -3,9 +3,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from research_and_analyst.database.db_config import SessionLocal, User, hash_password, verify_password
 from research_and_analyst.api.services.report_service import ReportService
+import os
 
 router = APIRouter()
 SESSIONS = {}
+
+# Detect if running on Hugging Face Spaces (HTTPS environment)
+IS_HF_SPACE = os.getenv("SPACE_ID") is not None or os.getenv("SYSTEM") == "spaces"
 
 def get_db():
     db = SessionLocal()
@@ -29,7 +33,21 @@ async def login(request: Request, username: str = Form(...), password: str = For
         session_id = f"{username}_session"
         SESSIONS[session_id] = username
         response = RedirectResponse(url="/dashboard", status_code=302)
-        response.set_cookie(key="session_id", value=session_id)
+        
+        # Set cookie with environment-specific security flags
+        if IS_HF_SPACE:
+            # HTTPS environment (HF Spaces) requires secure cookies
+            response.set_cookie(
+                key="session_id", 
+                value=session_id,
+                httponly=True,
+                secure=True,
+                samesite="lax"
+            )
+        else:
+            # Local/HTTP environment
+            response.set_cookie(key="session_id", value=session_id)
+        
         return response
 
     return request.app.templates.TemplateResponse(
