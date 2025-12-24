@@ -15,8 +15,15 @@ SESSIONS = {}  # Keep for backward compatibility with non-HF deployments
 # Detect if running on Hugging Face Spaces (HTTPS environment)
 IS_HF_SPACE = os.getenv("SPACE_ID") is not None or os.getenv("SYSTEM") == "spaces"
 
-# Secret key for signed cookies (use env var or generate random for HF Spaces)
-SECRET_KEY = os.getenv("SESSION_SECRET_KEY", secrets.token_hex(32))
+# Secret key for signed cookies - use deterministic fallback for HF Spaces
+# User should set SESSION_SECRET_KEY in HF Spaces secrets for production
+if IS_HF_SPACE:
+    # Use SPACE_ID as seed for deterministic but unique secret key
+    space_id = os.getenv("SPACE_ID", "default-space")
+    SECRET_KEY = hashlib.sha256(f"hf-space-{space_id}-secret".encode()).hexdigest()
+    print(f"[HF SPACES] Using deterministic secret key based on SPACE_ID")
+else:
+    SECRET_KEY = os.getenv("SESSION_SECRET_KEY", secrets.token_hex(32))
 
 def sign_cookie_value(value: str) -> str:
     """Sign a cookie value using HMAC-SHA256"""
@@ -116,11 +123,16 @@ async def signup(request: Request, username: str = Form(...), password: str = Fo
 async def dashboard(request: Request):
     username = None
     
+    print(f"[DEBUG] IS_HF_SPACE: {IS_HF_SPACE}")
+    print(f"[DEBUG] Cookies: {request.cookies}")
+    
     if IS_HF_SPACE:
         # Verify signed cookie for HF Spaces
         signed_cookie = request.cookies.get("user_session")
+        print(f"[DEBUG] Signed cookie value: {signed_cookie}")
         if signed_cookie:
             username = verify_signed_cookie(signed_cookie)
+            print(f"[DEBUG] Verified username: {username}")
     else:
         # Use in-memory session for local/Azure
         session_id = request.cookies.get("session_id")
@@ -128,6 +140,7 @@ async def dashboard(request: Request):
             username = SESSIONS[session_id]
     
     if not username:
+        print(f"[DEBUG] No valid session, redirecting to login")
         return RedirectResponse(url="/")
     
     return request.app.templates.TemplateResponse("dashboard.html", {"request": request, "user": username})
