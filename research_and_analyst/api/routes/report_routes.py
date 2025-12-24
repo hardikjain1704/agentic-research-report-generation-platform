@@ -36,12 +36,11 @@ async def login(request: Request, username: str = Form(...), password: str = For
         
         # Set cookie with environment-specific security flags
         if IS_HF_SPACE:
-            # HTTPS environment (HF Spaces) requires secure cookies
+            # HF Spaces: Use secure flags but not secure=True (internal routing is HTTP)
             response.set_cookie(
                 key="session_id", 
                 value=session_id,
                 httponly=True,
-                secure=True,
                 samesite="lax"
             )
         else:
