@@ -71,25 +71,19 @@ async def login(request: Request, username: str = Form(...), password: str = For
     user = db.query(User).filter(User.username == username).first()
 
     if user and verify_password(password, user.password):
+        # Always use signed cookies on hf-deploy branch
+        signed_username = sign_cookie_value(username)
+        print(f"[LOGIN] User {username} authenticated, setting cookie")
+        
         response = RedirectResponse(url="/dashboard", status_code=302)
-        
-        if IS_HF_SPACE:
-            # Use signed cookies for HF Spaces (stateless, works across instances)
-            signed_username = sign_cookie_value(username)
-            response.set_cookie(
-                key="user_session", 
-                value=signed_username,
-                path="/",
-                max_age=3600,  # 1 hour
-                httponly=True,
-                samesite="lax"
-            )
-        else:
-            # Use in-memory sessions for local/Azure deployment
-            session_id = f"{username}_session"
-            SESSIONS[session_id] = username
-            response.set_cookie(key="session_id", value=session_id)
-        
+        response.set_cookie(
+            key="user_session", 
+            value=signed_username,
+            path="/",
+            max_age=3600,
+            httponly=False,
+            samesite="lax"
+        )
         return response
 
     return request.app.templates.TemplateResponse(
@@ -121,28 +115,21 @@ async def signup(request: Request, username: str = Form(...), password: str = Fo
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
+    # Always use signed cookies on hf-deploy branch
+    signed_cookie = request.cookies.get("user_session")
+    print(f"[DASHBOARD] All cookies: {dict(request.cookies)}")
+    print(f"[DASHBOARD] user_session: {signed_cookie}")
+    
     username = None
-    
-    print(f"[DEBUG] IS_HF_SPACE: {IS_HF_SPACE}")
-    print(f"[DEBUG] Cookies: {request.cookies}")
-    
-    if IS_HF_SPACE:
-        # Verify signed cookie for HF Spaces
-        signed_cookie = request.cookies.get("user_session")
-        print(f"[DEBUG] Signed cookie value: {signed_cookie}")
-        if signed_cookie:
-            username = verify_signed_cookie(signed_cookie)
-            print(f"[DEBUG] Verified username: {username}")
-    else:
-        # Use in-memory session for local/Azure
-        session_id = request.cookies.get("session_id")
-        if session_id and session_id in SESSIONS:
-            username = SESSIONS[session_id]
+    if signed_cookie:
+        username = verify_signed_cookie(signed_cookie)
+        print(f"[DASHBOARD] Verified username: {username}")
     
     if not username:
-        print(f"[DEBUG] No valid session, redirecting to login")
+        print(f"[DASHBOARD] Auth failed, redirecting")
         return RedirectResponse(url="/")
     
+    print(f"[DASHBOARD] Success for user: {username}")
     return request.app.templates.TemplateResponse("dashboard.html", {"request": request, "user": username})
 
 @router.post("/generate_report", response_class=HTMLResponse)
