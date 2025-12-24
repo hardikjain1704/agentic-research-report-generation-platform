@@ -1,0 +1,2 @@
+# Prevent merge conflicts by always keeping hf-deploy's version
+Dockerfile merge=ours

@@ -1,4 +1,4 @@
-# Multi-stage build for Research Report Generation System (Hugging Face Spaces)
+# Multi-stage build for Research Report Generation System
 FROM python:3.11-slim AS builder
 
 WORKDIR /app
@@ -12,8 +12,7 @@ RUN apt-get update && apt-get install -y \
 # Copy project files needed for pip install
 COPY requirements.txt .
 COPY pyproject.toml .
-# Copy HF-specific README during build and rename it
-COPY README_HF.md README.md
+COPY README.md .
 # Create package directory structure for editable install
 RUN mkdir -p research_and_analyst
 COPY research_and_analyst/__init__.py research_and_analyst/
@@ -38,23 +37,20 @@ COPY --from=builder /root/.local /root/.local
 # Copy application code
 COPY . .
 
-# Copy README_HF.md as README.md for Hugging Face Spaces
-RUN cp README_HF.md README.md
-
 # Create directories for generated reports and logs
 RUN mkdir -p /app/generated_report /app/logs
 
-# Set environment variables for Hugging Face Spaces
+# Set environment variables
 ENV PATH=/root/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
-ENV PORT=7860
+ENV PORT=8000
 
-# Expose port 7860 (required by Hugging Face Spaces)
-EXPOSE 7860
+# Expose port
+EXPOSE 8000
 
-# Health check on port 7860
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:7860/health || exit 1
+  CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application on port 7860
-CMD ["uvicorn", "research_and_analyst.api.main:app", "--host", "0.0.0.0", "--port", "7860"]
+# Run the application
+CMD ["uvicorn", "research_and_analyst.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
