@@ -4,12 +4,46 @@ from sqlalchemy.orm import Session
 from research_and_analyst.database.db_config import SessionLocal, User, hash_password, verify_password
 from research_and_analyst.api.services.report_service import ReportService
 import os
+import hmac
+import hashlib
+import base64
+import secrets
 
 router = APIRouter()
-SESSIONS = {}
+SESSIONS = {}  # Keep for backward compatibility with non-HF deployments
 
 # Detect if running on Hugging Face Spaces (HTTPS environment)
 IS_HF_SPACE = os.getenv("SPACE_ID") is not None or os.getenv("SYSTEM") == "spaces"
+
+# Secret key for signed cookies (use env var or generate random for HF Spaces)
+SECRET_KEY = os.getenv("SESSION_SECRET_KEY", secrets.token_hex(32))
+
+def sign_cookie_value(value: str) -> str:
+    """Sign a cookie value using HMAC-SHA256"""
+    signature = hmac.new(
+        SECRET_KEY.encode(),
+        value.encode(),
+        hashlib.sha256
+    ).hexdigest()
+    # Return base64 encoded "value.signature"
+    signed = f"{value}.{signature}"
+    return base64.b64encode(signed.encode()).decode()
+
+def verify_signed_cookie(signed_value: str) -> str:
+    """Verify and extract value from signed cookie"""
+    try:
+        decoded = base64.b64decode(signed_value.encode()).decode()
+        value, signature = decoded.rsplit(".", 1)
+        expected_sig = hmac.new(
+            SECRET_KEY.encode(),
+            value.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        if hmac.compare_digest(signature, expected_sig):
+            return value
+    except Exception:
+        pass
+    return None
 
 def get_db():
     db = SessionLocal()
@@ -30,21 +64,23 @@ async def login(request: Request, username: str = Form(...), password: str = For
     user = db.query(User).filter(User.username == username).first()
 
     if user and verify_password(password, user.password):
-        session_id = f"{username}_session"
-        SESSIONS[session_id] = username
         response = RedirectResponse(url="/dashboard", status_code=302)
         
-        # Set cookie with environment-specific security flags
         if IS_HF_SPACE:
-            # HF Spaces: Use secure flags but not secure=True (internal routing is HTTP)
+            # Use signed cookies for HF Spaces (stateless, works across instances)
+            signed_username = sign_cookie_value(username)
             response.set_cookie(
-                key="session_id", 
-                value=session_id,
+                key="user_session", 
+                value=signed_username,
+                path="/",
+                max_age=3600,  # 1 hour
                 httponly=True,
                 samesite="lax"
             )
         else:
-            # Local/HTTP environment
+            # Use in-memory sessions for local/Azure deployment
+            session_id = f"{username}_session"
+            SESSIONS[session_id] = username
             response.set_cookie(key="session_id", value=session_id)
         
         return response
@@ -78,10 +114,23 @@ async def signup(request: Request, username: str = Form(...), password: str = Fo
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    session_id = request.cookies.get("session_id")
-    if session_id not in SESSIONS:
+    username = None
+    
+    if IS_HF_SPACE:
+        # Verify signed cookie for HF Spaces
+        signed_cookie = request.cookies.get("user_session")
+        if signed_cookie:
+            username = verify_signed_cookie(signed_cookie)
+    else:
+        # Use in-memory session for local/Azure
+        session_id = request.cookies.get("session_id")
+        if session_id and session_id in SESSIONS:
+            username = SESSIONS[session_id]
+    
+    if not username:
         return RedirectResponse(url="/")
-    return request.app.templates.TemplateResponse("dashboard.html", {"request": request, "user": SESSIONS[session_id]})
+    
+    return request.app.templates.TemplateResponse("dashboard.html", {"request": request, "user": username})
 
 @router.post("/generate_report", response_class=HTMLResponse)
 async def generate_report(request: Request, topic: str = Form(...)):
