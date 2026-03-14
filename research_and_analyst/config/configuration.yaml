@@ -18,7 +18,20 @@ llm:
 
   google:
     provider: "google"
-    model_name: "gemini-2.5-flash-lite"
+    model_name: "gemini-3.1-flash-lite-preview"
+    temperature: 0
+    max_output_tokens: 2048
+
+  google_structured:
+    provider: "google"
+    model_name: "gemini-2.5-flash"
+    temperature: 0
+    max_output_tokens: 2048
+
+  openrouter:
+    provider: "openrouter"
+    # model_name: "openrouter/hunter-alpha"
+    model_name: "stepfun/step-3.5-flash:free"
     temperature: 0
     max_output_tokens: 2048
 
