@@ -23,6 +23,7 @@ class ApiKeyManager:
             # "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
             "GOOGLE_API_KEY": os.getenv("GOOGLE_API_KEY"),
             "GROQ_API_KEY": os.getenv("GROQ_API_KEY"),
+            "OPENROUTER_API_KEY": os.getenv("OPENROUTER_API_KEY"),
             "TAVILY_API_KEY": os.getenv("TAVILY_API_KEY"),
         }
 
@@ -100,7 +101,7 @@ class ModelLoader:
     # ----------------------------------------------------------------------
     # 🔹 LLM Loader
     # ----------------------------------------------------------------------
-    def load_llm(self):
+    def load_llm(self, provider_override=None):
         """
         Load and return a chat-based LLM according to the configured provider.
 
@@ -114,7 +115,7 @@ class ModelLoader:
         """
         try:
             llm_block = self.config["llm"]
-            provider_key = os.getenv("LLM_PROVIDER", "openai")
+            provider_key = provider_override or os.getenv("LLM_PROVIDER", "google")
 
             if provider_key not in llm_block:
                 log.error("LLM provider not found in configuration", provider=provider_key)
@@ -141,6 +142,15 @@ class ModelLoader:
                     model=model_name,
                     api_key=self.api_key_mgr.get("GROQ_API_KEY"),
                     temperature=temperature,
+                )
+            
+            elif provider == "openrouter":
+                llm = ChatOpenAI(
+                    model=model_name,
+                    api_key=self.api_key_mgr.get("OPENROUTER_API_KEY"),
+                    base_url="https://openrouter.ai/api/v1",
+                    temperature=temperature,
+                    max_tokens=max_tokens,
                 )
 
             # elif provider == "openai":

@@ -13,6 +13,7 @@ from research_and_analyst.prompt_lib.prompt_locator import (
 )
 from research_and_analyst.logger import GLOBAL_LOGGER
 from research_and_analyst.exception.custom_exception import ResearchAnalystException
+from research_and_analyst.utils.model_loader import ModelLoader
 
 
 class InterviewGraphBuilder:
@@ -34,6 +35,7 @@ class InterviewGraphBuilder:
         self.tavily_search = tavily_search
         self.memory = MemorySaver()
         self.logger = GLOBAL_LOGGER.bind(module="InterviewGraphBuilder")
+        self.structured_llm = ModelLoader().load_llm("google_structured")
 
     # ----------------------------------------------------------------------
     # 🔹 Step 1: Analyst generates question
@@ -65,10 +67,14 @@ class InterviewGraphBuilder:
         """
         try:
             self.logger.info("Generating search query from conversation")
-            structure_llm = self.llm.with_structured_output(SearchQuery)
+            structure_llm = self.structured_llm.with_structured_output(SearchQuery)
             search_prompt = GENERATE_SEARCH_QUERY.render()
             search_query = structure_llm.invoke([SystemMessage(content=search_prompt)] + state["messages"])
 
+            if not search_query or not hasattr(search_query, 'search_query'):
+                self.logger.warning("Skipping web search: Model failed to generate query schema.")
+                return {"context": ["[No search results found due to schema failure.]"]}
+            
             self.logger.info("Performing Tavily web search", query=search_query.search_query)
             search_docs = self.tavily_search.invoke(search_query.search_query)
 

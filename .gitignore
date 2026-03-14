@@ -29,3 +29,5 @@ notebook/
 .pytest_cache/
 .coverage
 htmlcov/
+
+gitCommiter.py
